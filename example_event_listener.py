@@ -22,7 +22,7 @@ def stop(*args):
 
 ip_cam = IPCam(ip, ssl=ssl, auth_type=2, user=username, password=password)
 
-sub = ip_cam.event.subscribe(requested_timeout=60, auto_renew=True, listener_port=19000)
+sub = ip_cam.event.subscribe(requested_timeout=600, auto_renew=True, listener_port=19000)
 
 # ############################################################
 # Signal Handling

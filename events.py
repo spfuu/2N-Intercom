@@ -220,7 +220,7 @@ class Subscription(object):
         self._auto_renew_thread = None
         self._auto_renew_thread_flag = threading.Event()
 
-        self._default_subscription_timeout = 120
+        self._default_subscription_timeout = 600
         self.default_listener_port = 19000
         self._listener_port = self.default_listener_port
         self._listener_ip = core.get_lan_ip()
@@ -234,7 +234,7 @@ class Subscription(object):
         actually allocated.
 
         Args:
-            requested_timeout(int, optional): The timeout to be requested.
+            requested_timeout(int, optional): The timeout to be requested. Default: 600
             auto_renew (bool, optional): If `True`, renew the subscription
                 automatically shortly before timeout. Default `False`.
             listener_ip (str, optional): listener ip to handle events. Default: guessing local ip in the network
