@@ -10,7 +10,7 @@ import time
 import atexit
 import requests
 from datetime import datetime
-import core
+from utils import get_lan_ip
 
 try:
     import xml.etree.cElementTree as XML
@@ -81,7 +81,7 @@ def parse_event(xml):
     if element_timestamp is not None:
         event_dict['timestamp'] = str(datetime.strptime(element_timestamp.text, "%Y-%m-%dT%H:%M:%SZ"))
 
-    log.info("Event %s received for %s service on thread %s at %s",
+    log.info("Event %s received on thread %s at %s",
              event_dict['name'], threading.current_thread(), event_dict['timestamp'])
 
     event_data = {}
@@ -222,7 +222,7 @@ class Subscription(object):
 
         self._default_subscription_timeout = 600
         self._default_listener_port = 19000
-        self._default_listener_ip = core.get_lan_ip()
+        self._default_listener_ip = get_lan_ip()
 
     def subscribe(self, requested_timeout=None, auto_renew=False, listener_ip=None, listener_port=None):
         """Subscribe to the service.
