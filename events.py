@@ -221,9 +221,8 @@ class Subscription(object):
         self._auto_renew_thread_flag = threading.Event()
 
         self._default_subscription_timeout = 600
-        self.default_listener_port = 19000
-        self._listener_port = self.default_listener_port
-        self._listener_ip = core.get_lan_ip()
+        self._default_listener_port = 19000
+        self._default_listener_ip = core.get_lan_ip()
 
     def subscribe(self, requested_timeout=None, auto_renew=False, listener_ip=None, listener_port=None):
         """Subscribe to the service.
@@ -268,7 +267,9 @@ class Subscription(object):
                 log.warning("Port must be in a int between 1-65535. Using default port {port}.".format(
                     port=self.default_listener_port
                 ))
-                self._listener_port = self.default_listener_port
+                self._listener_port = self._default_listener_port
+        else:
+            self._listener_port = self._default_listener_port
 
         if listener_ip is not None:
             # check for valid ip address
@@ -277,6 +278,8 @@ class Subscription(object):
             except socket.error:
                 log.warning("Invalid listener IP. Using local IP {ip}.".format(ip=self._listener_ip))
             self._listener_ip = listener_ip
+        else:
+            self._listener_ip = self._default_listener_ip
 
         self.requested_timeout = requested_timeout
         if self._has_been_unsubscribed:
@@ -334,8 +337,11 @@ class Subscription(object):
 
         payload = base_soap.format(add_header=add_header, add_body=add_body)
 
-        response = requests.request('POST', self.service.base_url + self.service.event_url,
+        try:
+            response = requests.request('POST', self.service.base_url + self.service.event_url,
                                     headers=headers, data=payload, verify=False)
+        except ConnectionError:
+            exit('Could not connect to Intercom with url {ip}.'.format(ip=self.service.base_url))
         response.raise_for_status()
         tree = XML.fromstring(response.text)
 
