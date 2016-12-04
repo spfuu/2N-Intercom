@@ -112,6 +112,10 @@ class EventNotifyHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.end_headers()
 
+    def do_GET(self):  # pylint: disable=invalid-name
+        self.send_response(200)
+        self.end_headers()
+
     def log_message(self, fmt, *args):
         # Divert standard webserver logging to the debug log
         log.debug(fmt, *args)
@@ -224,7 +228,7 @@ class Subscription(object):
         self._default_listener_port = 19000
         self._default_listener_ip = get_lan_ip()
 
-    def subscribe(self, requested_timeout=None, auto_renew=False, listener_ip=None, listener_port=None):
+    def subscribe(self, requested_timeout=None, auto_renew=True, listener_ip=None, listener_port=None):
         """Subscribe to the service.
 
         If requested_timeout is provided, a subscription valid for that number
