@@ -114,7 +114,7 @@ class Service(object):
                 provided, a subscription valid for that
                 number of seconds will be requested, but not guaranteed. Check
                 `Subscription.timeout` on return to find out what period of
-                validity is actually allocated.
+                validity is actually allocated. Default: 600 seconds
             auto_renew (bool): If auto_renew is `True`, the subscription will
                 automatically be renewed just before it expires, if possible.
                 Default is `False`.
