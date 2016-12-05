@@ -109,13 +109,9 @@ class EventNotifyHandler(BaseHTTPRequestHandler):
         if queue is not None:
             queue.put((parse_event(content)))
 
-        self.send_response(200)
-        self.end_headers()
-
     def do_GET(self):  # pylint: disable=invalid-name
-        self.send_response(200)
-        self.end_headers()
-
+        pass
+    
     def log_message(self, fmt, *args):
         # Divert standard webserver logging to the debug log
         log.debug(fmt, *args)
