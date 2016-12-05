@@ -4,8 +4,8 @@ import signal
 from core import IPCam
 
 '''
-This example demonstrates a event listener implementation. Please change IP, username and password and (optional)
-authentication method and.
+This example demonstrates a event listener implementation. Please change IP, username, password and (optional)
+authentication method.
 Check your IP-Com settings to get the correct values.
 '''
 
@@ -33,8 +33,6 @@ sub = ip_cam.event.subscribe()
 signal.signal(signal.SIGHUP, stop)
 signal.signal(signal.SIGINT, stop)
 signal.signal(signal.SIGTERM, stop)
-
-ip_cam.commands.log_pull(sub.sid)
 
 while True:
     try:
