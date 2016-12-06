@@ -36,7 +36,7 @@ signal.signal(signal.SIGTERM, stop)
 
 while True:
     try:
-        event = sub.events.get(timeout=0.5)
+        event = sub.events.get()
 
         ''' event dictionary example:
 
