@@ -9,7 +9,7 @@ class IPCam(object):
         self.ip_address = ip
         self.user = user
         self.password = password
-        self.auth_type = auth_type  # 0: none, 1: basic, 2: digest
+        self.auth_type = int(auth_type)  # 0: none, 1: basic, 2: digest
         self.ssl = ssl
         self.commands = CommandService(self)
         self.event = EventService(self)
