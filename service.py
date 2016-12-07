@@ -3,7 +3,6 @@ from events import Subscription
 import os
 from urllib.parse import urljoin
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
-import error
 from requests import Request, Session
 
 log = logging.getLogger(__name__)
@@ -35,19 +34,19 @@ class send_command(object):
         Prepare HTTP-API request
         :param command:
         :return: requests.Request
-        :raise error.InvalidCommandError:
+        :raise
         """
 
         if 'method' not in command:
-            raise error.InvalidCommandError("No 'method' key for command '{name}.".format(name=self.func_name))
+            raise Exception("No 'method' key for command '{name}.".format(name=self.func_name))
 
         method = command['method'].upper()
         if method not in ['GET', 'PUT', 'POST', 'DELETE']:
-            raise error.InvalidCommandError("Invalid method '{method}' for command '{name}.".format(
+            raise Exception("Invalid method '{method}' for command '{name}.".format(
                 method=method, name=self.func_name))
 
         if 'call' not in command:
-            raise error.InvalidCommandError("No 'call' key for command '{name}.".format(name=self.func_name))
+            raise Exception("No 'call' key for command '{name}.".format(name=self.func_name))
 
         call = command['call']
 
@@ -70,13 +69,13 @@ class send_command(object):
 
         if method == 'PUT':
             if 'filename' not in command:
-                raise error.InvalidCommandError("No 'filename' key for command '{name}.".format(name=self.func_name))
+                raise Exception("No 'filename' key for command '{name}.".format(name=self.func_name))
             filename = os.path.realpath(command['filename'])
             if not os.path.exists(filename):
                 raise Exception("File '{file}' not found-".format(file=filename))
 
             if 'name' not in command:
-                raise error.InvalidCommandError("No 'name' key for command '{name}.".format(name=self.func_name))
+                raise Exception("No 'name' key for command '{name}.".format(name=self.func_name))
 
             return Request(
                 method=method,
@@ -93,21 +92,21 @@ class send_command(object):
         )
 
 class Service(object):
-    def __init__(self, ip_cam):
+    def __init__(self, ip_cam, event_register_time=None):
         self.ip_cam = ip_cam
         #: str: The UPnP service type.
         self.service_type = self.__class__.__name__
         #: str: The UPnP service version.
         self.version = 1
         self.service_id = self.service_type
-        #: str: The base URL for sending UPnP Actions.
+        self.event_register_time = event_register_time
 
         schema = 'http'
         if self.ip_cam.ssl:
             schema = 'https'
         self.base_url = "{schema}://{ip}".format(schema=schema, ip=self.ip_cam.ip_address)
 
-    def subscribe(self, requested_timeout=None, auto_renew=False, listener_ip=None, listener_port=None):
+    def subscribe(self, requested_timeout=None, auto_renew=True, listener_ip=None, listener_port=None):
         """Subscribe to the service's events.
         Args:
             requested_timeout (int, optional): If requested_timeout is
@@ -170,7 +169,7 @@ class Service(object):
 
 class CommandService(Service):
     def __init__(self, ip_cam):
-        super(CommandService, self).__init__(ip_cam)
+        super(CommandService, self).__init__(ip_cam, None)
         self._session = Session()
 
     @send_command
@@ -1386,6 +1385,6 @@ class CommandService(Service):
         }
 
 class EventService(Service):
-    def __init__(self, ip_cam):
-        super(EventService, self).__init__(ip_cam)
+    def __init__(self, ip_cam, event_register_time):
+        super(EventService, self).__init__(ip_cam, event_register_time)
         self.event_url = "/notification"
