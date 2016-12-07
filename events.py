@@ -112,10 +112,13 @@ class EventNotifyHandler(BaseHTTPRequestHandler):
         headers = requests.structures.CaseInsensitiveDict(self.headers)
         content_length = int(headers['content-length'])
         content = self.rfile.read(content_length)
-
         if queue is not None:
             queue.put((parse_event(content)))
-        self.send_response(200)
+        self.send_response(200, 'OK')
+        self.end_headers()
+
+    def do_GET(self):
+        self.send_response(200, 'OK')
         self.end_headers()
 
     def log_message(self, fmt, *args):
@@ -331,13 +334,16 @@ class Subscription(object):
                    "</wsnt:SubscriptionPolicy>" \
                    "</wsnt:Subscribe>"
 
+        start_date = self.service.event_register_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        log.debug('register for events later than {date}.'.format(date=start_date))
+
         add_body = add_body.format(
             IP=self._listener_ip,
             PORT=self._listener_port,
             DATETIME_OR_DURATION=subscription_timeout,
             EVENTS_LIST="",
             MAX_NUMBER_OF_MSGS_AT_ONCE="",
-            START_TIMESTAMP="{date}".format(date=datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")),
+            START_TIMESTAMP="{date}".format(date=start_date),
             START_RECORD_ID=""
         )
 
@@ -349,6 +355,7 @@ class Subscription(object):
         except ConnectionError:
             exit('Could not connect to Intercom with url {ip}.'.format(ip=self.service.base_url))
         response.raise_for_status()
+
         tree = XML.fromstring(response.text)
 
         # property values are just under the propertyset, which
