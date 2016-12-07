@@ -1,9 +1,20 @@
-class InvalidCommandError(Exception):
-    def __init__(self, message, errors):
-        super(InvalidCommandError, self).__init__(message)
-        self.errors = errors
+import json
 
-error_code = {
+class InvalidCommandError(Exception):
+    def __init__(self, error_code):
+        message = 'Unknown error occurred.'
+        if error_code in err_code:
+            message=err_code[error_code][1]
+        super(InvalidCommandError, self).__init__(message)
+
+
+def raise_for_intercom_error(intercom_response):
+    status = json.loads(intercom_response)
+    if 'error' not in status:
+        return
+    raise InvalidCommandError(status['error']['code'])
+
+err_code = {
     1: ['function is not supported', 'The requested function is unavailable in this model.'],
     2: ['invalid request path',
         'The absolute path specified in the HTTP request does not match any of the HTTP API functions.'],
