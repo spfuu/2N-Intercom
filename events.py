@@ -66,37 +66,44 @@ def parse_event(xml):
         log.warning("Unknown event response. Ignoring.")
         return
 
-    event_dict = {}
+    events = []
 
-    event_element = tree.find(".//event2n:EventName", ns)
-    if event_element is None:
-        return
-    event_dict['name'] = event_element.text.strip('event2n:')
+    event_elements = tree.findall(".//event2n:Msg", ns)
 
-    element_id = tree.find(".//event2n:Id", ns)
-    if element_id is not None:
-        event_dict['id'] = element_id.text
+    for event_element in event_elements:
+        event_dict = {}
 
-    element_timestamp = tree.find(".//event2n:Timestamp", ns)
-    if element_timestamp is not None:
-        event_dict['timestamp'] = str(datetime.strptime(element_timestamp.text, "%Y-%m-%dT%H:%M:%SZ"))
+        event_name = event_element.find(".//event2n:EventName", ns)
+        if event_name is None:
+            return
+        event_dict['name'] = event_name.text.strip('event2n:')
 
-    log.info("Event %s received on thread %s at %s",
-             event_dict['name'], threading.current_thread(), event_dict['timestamp'])
+        element_id = event_element.find(".//event2n:Id", ns)
+        if element_id is not None:
+            event_dict['id'] = element_id.text
 
-    event_data = {}
-    element_event_data = tree.find(".//event2n:Data", ns)
-    if element_id is None:
-        return
-    # find children
-    for child in element_event_data:
-        # remove xml namespace
-        if '}' in child.tag:
-            tag_name = child.tag.split('}', 1)[1].lower()
-            # get value
-            event_data[tag_name] = child.text
-    event_dict['data'] = event_data
-    return event_dict
+        element_timestamp = event_element.find(".//event2n:Timestamp", ns)
+        if element_timestamp is not None:
+            event_dict['timestamp'] = str(datetime.strptime(element_timestamp.text, "%Y-%m-%dT%H:%M:%SZ"))
+
+        log.info("Event %s received on thread %s at %s",
+                 event_dict['name'], threading.current_thread(), event_dict['timestamp'])
+
+        event_data = {}
+        element_event_data = event_element.find(".//event2n:Data", ns)
+        if element_id is None:
+            return
+        # find children
+        for child in element_event_data:
+            # remove xml namespace
+            if '}' in child.tag:
+                tag_name = child.tag.split('}', 1)[1].lower()
+                # get value
+                event_data[tag_name] = child.text
+
+        event_dict['data'] = event_data
+        events.append(event_dict)
+    return events
 
 class EventNotifyHandler(BaseHTTPRequestHandler):
     """Handles HTTP ``NOTIFY`` Verbs sent to the listener server."""
@@ -108,10 +115,9 @@ class EventNotifyHandler(BaseHTTPRequestHandler):
 
         if queue is not None:
             queue.put((parse_event(content)))
+        self.send_response(200)
+        self.end_headers()
 
-    def do_GET(self):  # pylint: disable=invalid-name
-        pass
-    
     def log_message(self, fmt, *args):
         # Divert standard webserver logging to the debug log
         log.debug(fmt, *args)
@@ -331,7 +337,7 @@ class Subscription(object):
             DATETIME_OR_DURATION=subscription_timeout,
             EVENTS_LIST="",
             MAX_NUMBER_OF_MSGS_AT_ONCE="",
-            START_TIMESTAMP="2016-11-29T10:18:59Z",
+            START_TIMESTAMP="{date}".format(date=datetime.now().strftime("%Y-%m-%dT%H:%M:%SZ")),
             START_RECORD_ID=""
         )
 
