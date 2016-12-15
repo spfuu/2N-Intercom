@@ -1,18 +1,9 @@
-import json
-
 class InvalidCommandError(Exception):
     def __init__(self, error_code):
         message = 'Unknown error occurred.'
         if error_code in err_code:
             message=err_code[error_code][1]
         super(InvalidCommandError, self).__init__(message)
-
-
-def raise_for_intercom_error(intercom_response):
-    status = json.loads(intercom_response)
-    if 'error' not in status:
-        return
-    raise InvalidCommandError(status['error']['code'])
 
 err_code = {
     1: ['function is not supported', 'The requested function is unavailable in this model.'],

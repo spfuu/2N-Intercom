@@ -1,11 +1,18 @@
+import json
 import logging
-from events import Subscription
 import os
 from urllib.parse import urljoin
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 from requests import Request, Session
+from error import InvalidCommandError
+
+ns = {
+    'event2n': 'http://www.2n.cz/2013/event',
+    'wsnt': 'http://docs.oasis-open.org/wsn/b-2'
+}
 
 log = logging.getLogger(__name__)
+
 
 class send_command(object):
     def __init__(self, func):
@@ -15,6 +22,7 @@ class send_command(object):
     def __get__(self, instance, owner):
         self.cls = owner
         self.obj = instance
+        self.timeout = self.obj.timeout
         return self.__call__
 
     def __call__(self, *args, **kwargs):
@@ -27,7 +35,9 @@ class send_command(object):
         if 'stream' in command:
             if command['stream'] in ['1', True]:
                 stream = True
-        return self.obj._session.send(prepared_request, verify=False, timeout=60, proxies=None, stream=stream)
+        return self.__parse_event(self.obj._session.send
+                                  (prepared_request, verify=False, timeout=self.obj.timeout + 10, proxies=None,
+                                   stream=stream))
 
     def __prepare_request(self, command):
         """
@@ -91,86 +101,25 @@ class send_command(object):
             auth=auth
         )
 
-class Service(object):
-    def __init__(self, ip_cam, event_register_time=None):
+    def __parse_event(self, command_response):
+        # check for critical connection errors
+        command_response.raise_for_status()
+        result = json.loads(command_response.text)
+        if 'error' in result:
+            raise InvalidCommandError(result['error']['code'])
+        return result['result']
+
+
+class CommandService(object):
+    def __init__(self, ip_cam, timeout):
         self.ip_cam = ip_cam
-        #: str: The UPnP service type.
-        self.service_type = self.__class__.__name__
-        #: str: The UPnP service version.
-        self.version = 1
-        self.service_id = self.service_type
-        self.event_register_time = event_register_time
+        self._session = Session()
+        self.timeout = timeout
 
         schema = 'http'
         if self.ip_cam.ssl:
             schema = 'https'
         self.base_url = "{schema}://{ip}".format(schema=schema, ip=self.ip_cam.ip_address)
-
-    def subscribe(self, requested_timeout=None, auto_renew=True, listener_ip=None, listener_port=None):
-        """Subscribe to the service's events.
-        Args:
-            requested_timeout (int, optional): If requested_timeout is
-                provided, a subscription valid for that
-                number of seconds will be requested, but not guaranteed. Check
-                `Subscription.timeout` on return to find out what period of
-                validity is actually allocated. Default: 600 seconds
-            auto_renew (bool): If auto_renew is `True`, the subscription will
-                automatically be renewed just before it expires, if possible.
-                Default is `False`.
-            event_queue (:class:`~queue.Queue`): a thread-safe queue object on
-                which received events will be put. If not specified,
-                a (:class:`~queue.Queue`) will be created and used.
-        Returns:
-            `Subscription`: an insance of `Subscription`, representing
-                the new subscription.
-        To unsubscribe, call the `unsubscribe` method on the returned object.
-        """
-        subscription = Subscription(self)
-        subscription.subscribe(requested_timeout=requested_timeout,
-                               auto_renew=auto_renew,
-                               listener_ip=listener_ip,
-                               listener_port=listener_port)
-        return subscription
-
-    def __getattr__(self, action):
-        """Called when a method on the instance cannot be found.
-
-        Causes an action to be sent to UPnP server. See also
-        `object.__getattr__`.
-
-        Args:
-            action (str): The name of the unknown method.
-        Returns:
-            callable: The callable to be invoked. .
-        """
-
-        # Define a function to be invoked as the method, which calls
-        # send_command.
-        def _dispatcher(self, *args, **kwargs):
-            """Dispatch to send_command."""
-            return self.send_command(action, *args, **kwargs)
-
-        # rename the function so it appears to be the called method. We
-        # probably don't need this, but it doesn't harm
-        _dispatcher.__name__ = action
-
-        # _dispatcher is now an unbound menthod, but we need a bound method.
-        # This turns an unbound method into a bound method (i.e. one that
-        # takes self - an instance of the class - as the first parameter)
-        # pylint: disable=no-member
-        method = _dispatcher.__get__(self, self.__class__)
-        # Now we have a bound method, we cache it on this instance, so that
-        # next time we don't have to go through this again
-        setattr(self, action, method)
-        log.debug("Dispatching method %s", action)
-
-        # return our new bound method, which will be called by Python
-        return method
-
-class CommandService(Service):
-    def __init__(self, ip_cam):
-        super(CommandService, self).__init__(ip_cam, None)
-        self._session = Session()
 
     @send_command
     def info(self):
@@ -1191,13 +1140,14 @@ class CommandService(Service):
         }
 
     @send_command
-    def log_pull(self, id, timeout=None):
+    def log_pull(self, id):
         """
         The /api/log/pull function helps you read items from the channel queue
         (subscription) and returns a list of events unread so far or an empty list if no new
         event is available.
-        Use the timeout parameter to define the maximum time for the intercom to generate
-        the reply. If there is one item at least in the queue, the reply is generated immediately.
+        The internal timeout parameter defines the maximum time for the intercom to generate
+        the reply. If there is one item at least in the queue, the reply is generated immediately. This parameter is
+        set by the instantiation of the IP Cam class. (default: 120sec)
         In case the channel queue is empty, the intercom puts off the reply until a new event
         arises or the defined timeout elapses.
 
@@ -1205,8 +1155,6 @@ class CommandService(Service):
 
         :param id: (uint32, mandatory) Identifier of the existing channel created by preceding dialling of
         /api/log/subscribe
-        :param timeout: (uint32, optional, default: 0) Define the reply delay (in seconds) if the channel queue is
-        empty. The default value 0 means that the intercom shall reply without delay.
         :return: The reply is in the application/json format and includes a list of events.
 
         Example:
@@ -1244,7 +1192,7 @@ class CommandService(Service):
             'call': '/api/log/pull',
             'parameter': {
                 'id': id,
-                'timeout': timeout
+                'timeout': self.timeout
             }
         }
 
@@ -1383,8 +1331,3 @@ class CommandService(Service):
             'call': '/api/pcap/stop',
             'parameter': {},
         }
-
-class EventService(Service):
-    def __init__(self, ip_cam, event_register_time):
-        super(EventService, self).__init__(ip_cam, event_register_time)
-        self.event_url = "/notification"

@@ -15,14 +15,20 @@ auth_type = 2  # 0=None, 1=Basic, 2=Digest
 ip_cam = IPCam(ip, ssl=ssl, auth_type=2, user=username, password=password)
 
 # For the complete list of commands anf their description please take a look
-# to service.py within the EventService class.
-# The repsonse is a requests.response (data as a dictionary).
+# to commands.py within the CommandService class.
 
-response = ip_cam.commands.info()  # basic device information
-response.raise_for_status()
-print(response.text)
+print(ip_cam.commands.info())  # basic device information
+print(ip_cam.commands.status())  # current intercom status
+print(ip_cam.commands.dial('**618'))  # dial number
 
-print(ip_cam.commands.status().text)  # current intercom status
-print(ip_cam.commands.dial('**618').text)  # dial number
+# subscribe for pulling events from Intercom
+data = ip_cam.commands.log_subscribe()
+id = data['id']
 
-#  and many more
+while True:
+    try:
+        result = ip_cam.commands.log_pull(id)
+        print(result)
+    except KeyboardInterrupt:
+        ip_cam.commands.log_unsubscribe(id)
+        break
