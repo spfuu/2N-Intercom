@@ -35,8 +35,9 @@ class send_command(object):
         if 'stream' in command:
             if command['stream'] in ['1', True]:
                 stream = True
+
         return self.__parse_event(self.obj._session.send
-                                  (prepared_request, verify=False, timeout=self.obj.timeout + 10, proxies=None,
+                                  (prepared_request, verify=False, timeout=self.obj.timeout, proxies=None,
                                    stream=stream))
 
     def __prepare_request(self, command):
@@ -65,17 +66,6 @@ class send_command(object):
             if 'parameter' in command:
                 # remove keys with empty values
                 payload = {i: j for i, j in command['parameter'].items() if j is not None}
-        auth = None
-
-        if self.obj.ip_cam.auth_type == 1:
-            auth = HTTPBasicAuth(self.obj.ip_cam.user, self.obj.ip_cam.password)
-        if self.obj.ip_cam.auth_type == 2:
-            auth = HTTPDigestAuth(self.obj.ip_cam.user, self.obj.ip_cam.password)
-
-        if auth:
-            if not self.obj.ip_cam.user or not self.obj.ip_cam.password:
-                print("Authentication method set with empty user and/or password. Fallback to non-auth.")
-                auth = None
 
         if method == 'PUT':
             if 'filename' not in command:
@@ -90,15 +80,13 @@ class send_command(object):
             return Request(
                 method=method,
                 url=urljoin(self.obj.ip_cam.commands.base_url, call),
-                files={command['name']: (os.path.basename(filename), open(filename, 'rb'), 'application/octet-stream')},
-                auth=auth
+                files={command['name']: (os.path.basename(filename), open(filename, 'rb'), 'application/octet-stream')}
             )
 
         return Request(
             method=method,
             url=urljoin(self.obj.ip_cam.commands.base_url, call),
             data=payload,
-            auth=auth
         )
 
     def __parse_event(self, command_response):
@@ -114,6 +102,17 @@ class CommandService(object):
     def __init__(self, ip_cam, timeout):
         self.ip_cam = ip_cam
         self._session = Session()
+
+        auth = None
+
+        if self.ip_cam.auth_type == 1:
+            auth = HTTPBasicAuth(self.ip_cam.user, self.ip_cam.password)
+        if self.ip_cam.auth_type == 2:
+            auth = HTTPDigestAuth(self.ip_cam.user, self.ip_cam.password)
+
+        if auth is not None:
+            self._session.auth = auth
+
         self.timeout = timeout
 
         schema = 'http'
