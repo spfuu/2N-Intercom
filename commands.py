@@ -29,7 +29,7 @@ class CommandService(object):
             schema = 'https'
         self.base_url = "{schema}://{ip}".format(schema=schema, ip=self.ip_cam.ip_address)
 
-    def info(self):
+    def system_info(self):
         """
         The /api/system/info function provides basic information on the device: type, serial
         number, firmware version, etc. The function is available in all device types regardless
@@ -62,7 +62,7 @@ class CommandService(object):
         response.raise_for_status()
         return response.text
 
-    def status(self):
+    def system_status(self):
         """
         The /api/system/status function returns the current intercom status.
 
@@ -90,7 +90,7 @@ class CommandService(object):
         response.raise_for_status()
         return response.text
 
-    def restart(self):
+    def system_restart(self):
         """
         The /api/system/restart restarts the intercom.
 
@@ -112,7 +112,7 @@ class CommandService(object):
         response.raise_for_status()
         return response.text
 
-    def upload_firmware(self, filename):
+    def firmware_upload(self, filename):
         """
         The /api/firmware function helps you upload a new firmware version to the device.
         When the upload is complete, use /api/firmware/apply to confirm restart and FW change.
@@ -147,7 +147,7 @@ class CommandService(object):
         response.raise_for_status()
         return response.text
 
-    def apply_firmware(self):
+    def firmware_apply(self):
         """
         The /api/firmware/apply function is used for earlier firmware upload ( PUT
         /api/firmware ) confirmation and subsequent device restart.
@@ -168,7 +168,7 @@ class CommandService(object):
         response.raise_for_status()
         return response.text
 
-    def get_config(self, filename=None):
+    def config_get(self, filename=None):
         """
         The /api/config function helps you to download the device configuration.
 
@@ -207,7 +207,7 @@ class CommandService(object):
 
         raise ValueError("Parameter filename cannot be empty or None")
 
-    def upload_config(self, filename):
+    def config_upload(self, filename):
         """
         The /api/config function helps you to upload the device configuration.
 
