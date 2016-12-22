@@ -24,9 +24,9 @@ ip_cam = IPCam(ip, ssl=ssl, auth_type=2, user=username, password=password)
 # For the complete list of commands anf their description please take a look
 # to commands.py within the CommandService class.
 
-print(ip_cam.commands.info())  # basic device information
-print(ip_cam.commands.status())  # current intercom status
-print(ip_cam.commands.dial('**618'))  # dial number
+print(ip_cam.commands.system_info())  # basic device information
+print(ip_cam.commands.system_status())  # current intercom status
+print(ip_cam.commands.call_dial('**618'))  # dial number
 
 
 # this is an example implementation for an event listener (for all events) with an auto-renewing subscription
