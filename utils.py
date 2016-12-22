@@ -1,8 +1,7 @@
 import os
 import socket
-import fcntl
 import struct
-
+import fcntl
 
 def get_lan_ip():
     try:
@@ -30,5 +29,5 @@ def get_lan_ip_fallback():
         s.connect(('<broadcast>', 0))
         return s.getsockname()[0]
     except Exception as err:
-        log.critical(err)
+        print(err)
         return None

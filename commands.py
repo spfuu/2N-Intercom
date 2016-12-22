@@ -1,10 +1,9 @@
 import json
 import logging
 import os
+import requests
 from urllib.parse import urljoin
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
-from requests import Request, Session
-from error import InvalidCommandError
 
 ns = {
     'event2n': 'http://www.2n.cz/2013/event',
@@ -14,113 +13,22 @@ ns = {
 log = logging.getLogger(__name__)
 
 
-class send_command(object):
-    def __init__(self, func):
-        self.func = func
-        self.func_name = func.__name__
-
-    def __get__(self, instance, owner):
-        self.cls = owner
-        self.obj = instance
-        self.timeout = self.obj.timeout
-        return self.__call__
-
-    def __call__(self, *args, **kwargs):
-        command = self.func.__call__(self, *args, **kwargs)
-        prepared_request = self.__prepare_request(command)
-        # pass it to requests.Session object
-        prepared_request = self.obj._session.prepare_request(prepared_request)
-
-        stream = False
-        if 'stream' in command:
-            if command['stream'] in ['1', True]:
-                stream = True
-
-        return self.__parse_event(self.obj._session.send
-                                  (prepared_request, verify=False, timeout=self.obj.timeout, proxies=None,
-                                   stream=stream))
-
-    def __prepare_request(self, command):
-        """
-        Prepare HTTP-API request
-        :param command:
-        :return: requests.Request
-        :raise
-        """
-
-        if 'method' not in command:
-            raise Exception("No 'method' key for command '{name}.".format(name=self.func_name))
-
-        method = command['method'].upper()
-        if method not in ['GET', 'PUT', 'POST', 'DELETE']:
-            raise Exception("Invalid method '{method}' for command '{name}.".format(
-                method=method, name=self.func_name))
-
-        if 'call' not in command:
-            raise Exception("No 'call' key for command '{name}.".format(name=self.func_name))
-
-        call = command['call']
-
-        payload = None
-        if method == 'POST':
-            if 'parameter' in command:
-                # remove keys with empty values
-                payload = {i: j for i, j in command['parameter'].items() if j is not None}
-
-        if method == 'PUT':
-            if 'filename' not in command:
-                raise Exception("No 'filename' key for command '{name}.".format(name=self.func_name))
-            filename = os.path.realpath(command['filename'])
-            if not os.path.exists(filename):
-                raise Exception("File '{file}' not found-".format(file=filename))
-
-            if 'name' not in command:
-                raise Exception("No 'name' key for command '{name}.".format(name=self.func_name))
-
-            return Request(
-                method=method,
-                url=urljoin(self.obj.ip_cam.commands.base_url, call),
-                files={command['name']: (os.path.basename(filename), open(filename, 'rb'), 'application/octet-stream')}
-            )
-
-        return Request(
-            method=method,
-            url=urljoin(self.obj.ip_cam.commands.base_url, call),
-            data=payload,
-        )
-
-    def __parse_event(self, command_response):
-        # check for critical connection errors
-        command_response.raise_for_status()
-        result = json.loads(command_response.text)
-        if 'error' in result:
-            raise InvalidCommandError(result['error']['code'])
-        return result['result']
-
-
 class CommandService(object):
-    def __init__(self, ip_cam, timeout):
+    def __init__(self, ip_cam):
         self.ip_cam = ip_cam
-        self._session = Session()
 
-        auth = None
+        self.auth = None
 
         if self.ip_cam.auth_type == 1:
-            auth = HTTPBasicAuth(self.ip_cam.user, self.ip_cam.password)
+            self.auth = HTTPBasicAuth(self.ip_cam.user, self.ip_cam.password)
         if self.ip_cam.auth_type == 2:
-            auth = HTTPDigestAuth(self.ip_cam.user, self.ip_cam.password)
-
-        if auth is not None:
-            self._session.auth = auth
-
-        self.timeout = timeout
+            self.auth = HTTPDigestAuth(self.ip_cam.user, self.ip_cam.password)
 
         schema = 'http'
         if self.ip_cam.ssl:
             schema = 'https'
         self.base_url = "{schema}://{ip}".format(schema=schema, ip=self.ip_cam.ip_address)
 
-    @send_command
     def info(self):
         """
         The /api/system/info function provides basic information on the device: type, serial
@@ -150,13 +58,10 @@ class CommandService(object):
         deviceName: Device name set in the configuration interface on the Services / Web Server tab
 
         """
-        return {
-            'method': 'get',
-            'call': '/api/system/info',
-            'parameter': {},
-        }
+        response = requests.get(urljoin(self.base_url, "/api/system/info"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def status(self):
         """
         The /api/system/status function returns the current intercom status.
@@ -180,13 +85,11 @@ class CommandService(object):
         systemTime: Device real time in seconds since 00:00 1.1.1970 (unix time)
         upTime: Device operation time since the last restart in seconds
         """
-        return {
-            'method': 'get',
-            'call': '/api/system/status',
-            'parameter': {},
-        }
 
-    @send_command
+        response = requests.get(urljoin(self.base_url, "/api/system/status"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
+
     def restart(self):
         """
         The /api/system/restart restarts the intercom.
@@ -204,13 +107,11 @@ class CommandService(object):
         }
 
         """
-        return {
-            'method': 'get',
-            'call': '/api/system/restart',
-            'parameter': {},
-        }
 
-    @send_command
+        response = requests.get(urljoin(self.base_url, "/api/system/restart"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
+
     def upload_firmware(self, filename):
         """
         The /api/firmware function helps you upload a new firmware version to the device.
@@ -239,14 +140,13 @@ class CommandService(object):
         If the FW file to be uploaded is corrupted or not intended for your device, the intercom
         returns error code 12 – invalid parameter value.
         """
-        return {
-            'method': 'put',
-            'call': '/api/firmware',
-            'name': 'blob-fw',
-            'filename': filename
-        }
 
-    @send_command
+        response = requests.put(urljoin(self.base_url, "/api/firmware"), auth=self.auth, verify=False,
+                                files={'blob-fw': (
+                                    os.path.basename(filename), open(filename, 'rb'), 'application/octet-stream')})
+        response.raise_for_status()
+        return response.text
+
     def apply_firmware(self):
         """
         The /api/firmware/apply function is used for earlier firmware upload ( PUT
@@ -264,14 +164,11 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'get',
-            'call': '/api/firmware/apply',
-            'parameter': {},
-        }
+        response = requests.get(urljoin(self.base_url, "/api/firmware/apply"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
-    def get_config(self):
+    def get_config(self, filename=None):
         """
         The /api/config function helps you to download the device configuration.
 
@@ -279,35 +176,37 @@ class CommandService(object):
         Control privilege for authentication if required . The function is available with the
         Enhanced Integration licence key only.
 
-        :return: For configuration download, the reply is in the application/xml format and contains a
-        complete device configuration file.
+        :type filename: path to a file where the config is stored.
+        text
+        :return: The reply is in the application/json format and includes no parameters.
 
         Example:
-        GET /api/config
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!--
-            Product name: 2N Helios IP Vario
-            Serial number: 08-1860-0035
-            Software version: 2.10.0.19.2
-            Hardware version: 535v1
-            Bootloader version: 2.10.0.19.1
-            Display: No
-            Card reader: No
-        -->
-        <DeviceDatabase Version="4">
-        <Network>
-        <DhcpEnabled>1</DhcpEnabled>
-        ...
-        ...
-
-        """
-        return {
-            'method': 'get',
-            'call': '/api/config',
-            'parameter': {},
+        GET /api/firmware/apply
+        {
+            "success" : true
         }
+        """
 
-    @send_command
+        if filename is not None:
+            save_dir = os.path.dirname(filename)
+            if not os.access(save_dir, os.W_OK):
+                raise IOError("No write permissions to {dir}.".format(dir=save_dir))
+
+            response = requests.get(urljoin(self.base_url, "/api/config"), auth=self.auth, verify=False, stream=True)
+            response.raise_for_status()
+
+            if response.headers['Content-Type'] == 'application/json':
+                return response.text
+
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+
+            return json.dumps({'success': True})
+
+        raise ValueError("Parameter filename cannot be empty or None")
+
     def upload_config(self, filename):
         """
         The /api/config function helps you to upload the device configuration.
@@ -325,20 +224,17 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'put',
-            'call': '/api/config',
-            'name': 'blob-cfg',
-            'filename': filename,
-        }
+        response = requests.put(urljoin(self.base_url, "/api/config"), auth=self.auth, verify=False,
+                                files={'blob-cfg': (
+                                    os.path.basename(filename), open(filename, 'rb'), 'application/octet-stream')})
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def factory_reset(self):
         """
         The /api/config/factoryreset function resets the factory default values for all the
         intercom parameters. This function is equivalent to the function of the same name in
         the System / Maintenance / Default setting section of the configuration web interface .
-
         The function is part of the System service and the user must be assigned the System
         Control privilege for authentication if required. The function is available with the
         Enhanced Integration licence key only.
@@ -351,13 +247,10 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'get',
-            'call': '/api/config/factoryreset',
-            'parameter': {},
-        }
+        response = requests.get(urljoin(self.base_url, "/api/config/factoryreset"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def switch_caps(self):
         """
         The /api/switch/caps function returns the current switch settings and control
@@ -410,13 +303,10 @@ class CommandService(object):
         type: Switch type ( normal , security )
 
         """
-        return {
-            'method': 'get',
-            'call': '/api/switch/caps',
-            'parameter': {},
-        }
+        response = requests.get(urljoin(self.base_url, "/api/switch/caps"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def switch_status(self, switch=None):
         """
         The /api/switch/status function returns the current switch statuses.
@@ -456,16 +346,14 @@ class CommandService(object):
             }
         }
         """
+        data = None
+        if switch is not None and switch > 0:
+            data = {'switch': switch}
 
-        return {
-            'method': 'POST',
-            'call': '/api/switch/status',
-            'parameter': {
-                'switch': switch
-            },
-        }
+        response = requests.post(urljoin(self.base_url, "/api/switch/status"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def switch_control(self, switch, action, response=None):
         """
         The /api/switch/ctrl function controls the switch statuses. The function has two
@@ -491,17 +379,23 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/switch/ctrl',
-            'parameter': {
+
+        if response:
+            data = {
                 'switch': switch,
                 'action': action,
                 'response': response
             }
-        }
+        else:
+            data = {
+                'switch': switch,
+                'action': action
+            }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/switch/ctrl"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def io_caps(self, port=None):
         """
         The /api/io/caps function returns a list of available hardware inputs and outputs
@@ -535,16 +429,20 @@ class CommandService(object):
 
         port: Input/output identifier
         type: Type ( input – for digital inputs, output – for digital outputs)
+
         """
-        return {
-            'method': 'POST',
-            'call': '/api/io/caps',
-            'parameter': {
+
+        data = None
+
+        if port:
+            data = {
                 'port': port
             }
-        }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/io/caps"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def io_status(self, port=None):
         """
         The /api/io/status function returns the current statuses of logic inputs and outputs
@@ -577,15 +475,18 @@ class CommandService(object):
             }
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/io/status',
-            'parameter': {
+
+        data = None
+
+        if port:
+            data = {
                 'port': port
             }
-        }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/io/status"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def io_control(self, port, action, response=None):
         """
         The /api/io/ctrl function controls the statuses of the device logic outputs. The
@@ -611,17 +512,23 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/io/ctrl',
-            'parameter': {
+
+        if response:
+            data = {
                 'port': port,
                 'action': action,
                 'response': response
             }
-        }
+        else:
+            data = {
+                'port': port,
+                'action': action
+            }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/io/ctrl"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def phone_status(self, account=None):
         """
         The /api/phone/status functions helps you get the current statuses of the device
@@ -662,15 +569,17 @@ class CommandService(object):
         registered: Account registration with the SIP Registrar
         registerTime: Last successful registration time in seconds since 00:00 1.1.1970 (unix time)
         """
-        return {
-            'method': 'POST',
-            'call': '/api/phone/status',
-            'parameter': {
+        data = None
+
+        if account:
+            data = {
                 'account': account
             }
-        }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/phone/status"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def call_status(self, session=None):
         """
         The /api/call/status function helps you get the current states of active telephone
@@ -704,16 +613,19 @@ class CommandService(object):
         direction: Call direction ( incoming , outgoing )
         state: Call state ( connecting , ringing , connected )
         """
-        return {
-            'method': 'POST',
-            'call': '/api/call/status',
-            'parameter': {
+
+        data = None
+
+        if session:
+            data = {
                 'session': session
             }
-        }
 
-    @send_command
-    def dial(self, number):
+        response = requests.post(urljoin(self.base_url, "/api/call/status"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
+    def call_dial(self, number):
         """
         The /api/call/dial function initiates a new outgoing call to a selected phone number
         or sip uri. After some test with a Fritzbox, it seems you have to call '**your_number/1'
@@ -739,16 +651,16 @@ class CommandService(object):
         session: Call identifier, used, for example, for call monitoring with
         /api/call/status or call termination with /api/call/hangup
         """
-        return {
-            'method': 'POST',
-            'call': '/api/call/dial',
-            'parameter': {
-                'number': number
-            }
+
+        data = {
+            'number': number
         }
 
-    @send_command
-    def answer(self, session):
+        response = requests.post(urljoin(self.base_url, "/api/call/dial"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
+    def call_answer(self, session):
         """
         The /api/call/answer function helps you answer an active incoming call (in the
         ringing state).
@@ -766,16 +678,16 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/call/answer',
-            'parameter': {
-                'session': session
-            }
+
+        data = {
+            'session': session
         }
 
-    @send_command
-    def hangup(self, session, reason=None):
+        response = requests.post(urljoin(self.base_url, "/api/call/answer"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
+    def call_hangup(self, session, reason=None):
         """
         The /api/call/hangup helps you hang up an active incoming or outgoing call.
         The function is part of the Phone/Call service and the user must be assigned the
@@ -783,7 +695,7 @@ class CommandService(object):
         Phone/Call Control privilege for authentication if required . The function is available
         with the Enhanced Integration licence key only.
 
-        :param session:
+        :param session: Active call identifier
         :param reason: End call reason:
             normal - normal call end (default value) reason
             rejected - call rejection signalling
@@ -796,16 +708,20 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/call/hangup',
-            'parameter': {
+        if reason:
+            data = {
                 'session': session,
                 'reason': reason
             }
-        }
+        else:
+            data = {
+                'session': session
+            }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/call/hangup"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def camera_caps(self):
         """
         The /api/camera/caps function returns a list of available video sources and
@@ -862,14 +778,12 @@ class CommandService(object):
         width, height: Snapshot resolution in pixels
         source: Video source identifier
         """
-        return {
-            'method': 'POST',
-            'call': '/api/camera/caps',
-            'parameter': {}
-        }
 
-    @send_command
-    def camera_snapshot(self, width, height, source=None, fps=None):
+        response = requests.post(urljoin(self.base_url, "/api/camera/caps"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
+
+    def camera_snapshot(self, width, height, filename, source=None, time=None):
         """
         The /api/camera/snapshot function helps you download images from an internal or
         external IP camera connected to the intercom. Specify the video source, resolution and
@@ -878,33 +792,57 @@ class CommandService(object):
         The function is part of the Camera service and the user must be assigned the Camera
         Monitoring privilege for authentication if required.
 
+        :type time: Optional parameter defining the snapshot time in the intercom memory where time <= 0 … count of
+        seconds to the past, time > 0 … count of seconds from 1.1.1970 (Unix Time). The time values must be within the
+        intercom memory range: <-30, 0> seconds.
+        :type filename: File path where the snapshot is stored to.
         :param width: Mandatory parameter specifying the horizontal resolution of the JPEG image in pixels
         :param height: Mandatory parameter specifying the vertical resolution of the JPEG image in pixels.
         The snapshot height and width must comply with one of the supported options (see api/camera/caps ).
         :param source: Optional parameter defining the video source ( internal – internal camera,
         external – external IP camera). If the parameter is not included, the default video source included in
         the Hardware / Camera / Common settings section of the configuration web interface is selected.
-        :param fps: Optional parameter defining the frame rate. If the parameter is set to >= 1, the intercom sends
-        images at the set frame rate using the http server push method .
-        :return: The reply is in the image/jpeg or multipart/x-mixed-replace (pro fps >= 1) format. If the request
-        parameters are wrong, the function returns information in the application/json format.
+        :return: The reply is in the application/json format and includes no parameters.
+
+        This code differs from the orignal code by 2N. 'fp' parameter is not supported here and the picture is saved to
+        a file.
 
         Example:
         POST /api/camera/snapshot
-        {}
+        {
+            "success": true
+        }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/camera/snapshot',
-            'parameter': {
-                'width': width,
-                'height': height,
-                'source': source,
-                'fps': fps
-            }
+
+        data = {
+            'width': width,
+            'height': height
         }
 
-    @send_command
+        if source:
+            data['source'] = source
+        if time:
+            data['time'] = time
+
+        if filename is not None:
+            save_dir = os.path.dirname(filename)
+            if not os.access(save_dir, os.W_OK):
+                raise IOError("No write permissions to {dir}.".format(dir=save_dir))
+
+            response = requests.post(urljoin(self.base_url, "/api/camera/snapshot"), auth=self.auth, verify=False,
+                                     stream=True, data=data)
+            response.raise_for_status()
+
+            if response.headers['Content-Type'] == 'application/json':
+                return response.text
+
+            with open(filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+
+        return json.dumps({'success': True})
+
     def display_caps(self):
         """
         The /api/display/caps function returns a list of device displays including their
@@ -935,14 +873,11 @@ class CommandService(object):
         display: Display identifier
         resolution: Display resolution in pixels
         """
-        return {
-            'method': 'POST',
-            'call': '/api/display/caps',
-            'parameter': {}
-        }
+        response = requests.post(urljoin(self.base_url, "/api/display/caps"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
-    def display_upload_image(self, display, gif):
+    def display_upload_image(self, display, gif_filename):
         """
         The /api/display/image function helps you upload content to be displayed.
         Note: The function is available only if the standard display function is disabled in the Hardware / Display
@@ -953,7 +888,7 @@ class CommandService(object):
         Enhanced Integration licence key only.
 
         :param display: Mandatory display identifier ( internal )
-        :param gif: Mandatory parameter including a GIF image with display resolution
+        :param gif_filename: Mandatory parameter file path to a GIF image with display resolution
         :return: The reply is in the application/json format and includes no parameters.
 
         Example:
@@ -962,17 +897,17 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'PUT',
-            'call': '/api/display/image',
-            'name': 'blob-image',
-            'parameter': {
-                'display': display
-            },
-            'filename': gif
+
+        data = {
+            'display': display
         }
 
-    @send_command
+        response = requests.put(urljoin(self.base_url, "/api/display/image"), auth=self.auth, verify=False, data=data,
+                                files={'blob-image': (os.path.basename(gif_filename), open(gif_filename, 'rb'),
+                                                      'application/octet-stream')})
+        response.raise_for_status()
+        return response.text
+
     def display_delete_image(self, display):
         """
         The /api/display/image function helps you delete content from the display.
@@ -992,15 +927,16 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'DELETE',
-            'call': '/api/display/image',
-            'parameter': {
-                'display': display
-            }
+
+        data = {
+            'display': display
         }
 
-    @send_command
+        response = requests.delete(urljoin(self.base_url, "/api/display/image"), auth=self.auth, verify=False,
+                                   data=data)
+        response.raise_for_status()
+        return response.text
+
     def log_caps(self):
         """
         The /api/log/caps function returns a list of supported event types that are recorded
@@ -1032,13 +968,10 @@ class CommandService(object):
 
         events: Array of strings including a list of supported event types
         """
-        return {
-            'method': 'POST',
-            'call': '/api/log/caps',
-            'parameter': {}
-        }
+        response = requests.post(urljoin(self.base_url, "/api/log/caps"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def log_subscribe(self, include=None, filter=None, duration=None):
         """
         The /api/log/subscribe function helps you create a subscription channel and returns
@@ -1062,19 +995,24 @@ class CommandService(object):
 
         Event type / Required user privileges:
         ----
-        DeviceState: None
-        AudioLoopTest: None
-        MotionDetected: None
-        NoiseDetected: None
-        KeyPressed: Keypad monitoring
-        KeyReleased: Keypad monitoring
-        CodeEntered: Keypad monitoring
-        CardEntered: UID monitoring (cards/Wiegand)
-        InputChanged: I/O monitoring
-        OutputChanged: I/O monitoring
-        SwitchStateChanged: I/O monitoring
-        CallStateChanged: Call/phone monitoring
-        RegistrationStateChanged: Call/phone monitoring
+        DeviceState  	            None
+        AudioLoopTest 	            None
+        MotionDetected 	            None
+        NoiseDetected 	            None
+        KeyPressed 	                Keypad monitoring
+        KeyReleased 	            Keypad monitoring
+        CodeEntered 	            Keypad monitoring
+        CardEntered 	            UID monitoring (cards/Wiegand)
+        InputChanged 	            I/O monitoring
+        OutputChanged 	            I/O monitoring
+        SwitchStateChanged 	        I/O monitoring
+        CallStateChanged 	        Call/phone monitoring
+        RegistrationStateChanged 	Call/phone monitoring
+        TamperSwitchActivated 	    None
+        UnauthorizedDoorOpen 	    None
+        DoorOpenTooLong 	        None
+        LoginBlocked 	            None
+        UserAuthenticated           None
 
         :param include: (optional), type 'string', default: new
         Define the events to be added to the channel event queue:
@@ -1087,7 +1025,7 @@ class CommandService(object):
         :param duration: (optional), type 'uint32', default 90
         Define a timeout in seconds after which the channel shall be closed automatically if no
         /api/log/pull reading operations are in progress. Every channel reading automatically extends the channel
-        duration by the value included here. Themaximum value is 3600 s.
+        duration by the value included here. The maximum value is 3600 s.
         :return: The reply is in the application/json format subscription.
 
         Example:
@@ -1101,17 +1039,20 @@ class CommandService(object):
 
         id: Unique identifier created by subscription
         """
-        return {
-            'method': 'POST',
-            'call': '/api/log/subscribe',
-            'parameter': {
-                'include': include,
-                'filter': filter,
-                'duration': duration
-            }
-        }
 
-    @send_command
+        data = {}
+
+        if duration:
+            data['duration'] = duration
+        if include:
+            data['include'] = include
+        if filter:
+            data['filter'] = filter
+
+        response = requests.post(urljoin(self.base_url, "/api/log/subscribe"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
     def log_unsubscribe(self, id):
         """
         The /api/log/unsubscribe function helps you close the subscription channel with the
@@ -1130,30 +1071,31 @@ class CommandService(object):
             "success" : true,
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/log/unsubscribe',
-            'parameter': {
-                'id': id
-            }
+
+        data = {
+            'id': id
         }
 
-    @send_command
-    def log_pull(self, id):
+        response = requests.post(urljoin(self.base_url, "/api/log/unsubscribe"), auth=self.auth, verify=False,
+                                 data=data)
+        response.raise_for_status()
+        return response.text
+
+    def log_pull(self, id, timeout=0):
         """
         The /api/log/pull function helps you read items from the channel queue
         (subscription) and returns a list of events unread so far or an empty list if no new
         event is available.
         The internal timeout parameter defines the maximum time for the intercom to generate
         the reply. If there is one item at least in the queue, the reply is generated immediately. This parameter is
-        set by the instantiation of the IP Cam class. (default: 120sec)
-        In case the channel queue is empty, the intercom puts off the reply until a new event
-        arises or the defined timeout elapses.
 
         The function is part of the Logging service and requires no special user privileges .
 
         :param id: (uint32, mandatory) Identifier of the existing channel created by preceding dialling of
         /api/log/subscribe
+        :type timeout: read-timeout for an open channel to Intercom. In case the channel queue is empty, the
+        intercom puts off the reply until a new event arises or the defined timeout elapses. The default value 0 means
+        that the intercom shall reply without delay.
         :return: The reply is in the application/json format and includes a list of events.
 
         Example:
@@ -1186,16 +1128,17 @@ class CommandService(object):
 
         events: Event object array. If no event occurs during the timeout, the array is empty.
         """
-        return {
-            'method': 'POST',
-            'call': '/api/log/pull',
-            'parameter': {
-                'id': id,
-                'timeout': self.timeout
-            }
+
+        data = {
+            'id': id,
+            'timeout': timeout
         }
 
-    @send_command
+        response = requests.post(urljoin(self.base_url, "/api/log/pull"), auth=self.auth, verify=False,
+                                 data=data, timeout=timeout + 5)
+        response.raise_for_status()
+        return response.text
+
     def audio_test(self):
         """
         The /api/audio/test function launches an automatic test of the intecom built-in
@@ -1213,14 +1156,11 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/audio/test',
-            'parameter': {}
-        }
+        response = requests.post(urljoin(self.base_url, "/api/audio/test"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
-    def email_send(self, to, subject, body=None, picture_count=None, width=None, height=None):
+    def email_send(self, to, subject, width=None, height=None, body=None, picture_count=None, timespan=None):
         """
         The /api/email/send function sends an e-mail to the required address. Make sure
         that the SMTP service is configured correctly for the device (i.e. correct SMTP server
@@ -1235,9 +1175,13 @@ class CommandService(object):
         :param body: Optional parameter specifying the contents of the message (including html marks if necessary).
         If not completed, the message will be delivered without any contents.
         :param picture_count: Optional parameter specifying the count of camera images to be enclosed.
-        If not completed, no images are enclosed. Parameter values: 0 and 1.
-        :param width: image width in pixel. Optional if picture_count = 0.
-        :param height: image height in pixel. Optional if picture_count = 0.
+        If not completed, no images are enclosed. Parameter values: 0-5.
+        :param width: Optional parameters specifying the width of camera images to be enclosed. The image width must
+        comply with one of the supported options (see api/camera/caps).
+        :param height: Optional parameters specifying the heigh of camera images to be enclosed. The image height must
+        comply with one of the supported options (see api/camera/caps).
+        :param timespan: Optional parameter specifying the timespan in seconds of the snapshots enclosed to the email.
+        Default value: 0.
         :return: The reply is in the application/json format and includes no parameters.
 
         Example:
@@ -1246,21 +1190,30 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/email/send',
-            'parameter': {
-                'to': to,
-                'subject': subject,
-                'body': body,
-                'pictureCount': picture_count,
-                'width': width,
-                'height': height
-            }
+
+        data = {
+            'to': to,
+            'subject': subject,
         }
 
-    @send_command
-    def pcap(self):
+        if body:
+            data['body'] = body
+        if height:
+            data['height'] = height
+        if width:
+            data['width'] = width
+        if body:
+            data['body'] = body
+        if picture_count:
+            data['pictureCount'] = picture_count
+        if timespan:
+            data['timeSpan'] = timespan
+
+        response = requests.post(urljoin(self.base_url, "/api/email/send"), auth=self.auth, verify=False, data=data)
+        response.raise_for_status()
+        return response.text
+
+    def pcap(self, pcap_file):
         """
         The /api/pcap function helps download the network interface traffic records (pcap
         file). You can also use the /api/pcap/restart a /api/pcap/stop functions for
@@ -1270,6 +1223,7 @@ class CommandService(object):
         Control privilege for authentication if required. The function is available with the
         Enhanced Integration licence key only
 
+        :type pcap_file: file path where the pcap data is saved to
         :return: The reply is in the application/json format and the downloaded file can be opened
         directly in Wireshark, for example.
 
@@ -1277,14 +1231,25 @@ class CommandService(object):
         POST /api/pcap
         {}
         """
-        return {
-            'method': 'GET',
-            'call': '/api/pcap',
-            'parameter': {},
-            'stream': True
-        }
 
-    @send_command
+        if pcap_file is not None:
+            save_dir = os.path.dirname(pcap_file)
+            if not os.access(save_dir, os.W_OK):
+                raise IOError("No write permissions to {dir}.".format(dir=save_dir))
+
+            response = requests.post(urljoin(self.base_url, "/api/pcap"), auth=self.auth, verify=False, stream=True)
+            response.raise_for_status()
+
+            if response.headers['Content-Type'] == 'application/json':
+                return response.text
+
+            with open(pcap_file, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=1024):
+                    if chunk:  # filter out keep-alive new chunks
+                        f.write(chunk)
+
+            return json.dumps({'success': True})
+
     def pcap_restart(self):
         """
         The /api/pcap/restart function deletes all records and restarts the network interface
@@ -1302,13 +1267,10 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/pcap/restart',
-            'parameter': {},
-        }
+        response = requests.post(urljoin(self.base_url, "/api/pcap/restart"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
 
-    @send_command
     def pcap_stop(self):
         """
         The /api/pcap/stop function stops the network interface traffic recording.
@@ -1325,8 +1287,6 @@ class CommandService(object):
             "success" : true
         }
         """
-        return {
-            'method': 'POST',
-            'call': '/api/pcap/stop',
-            'parameter': {},
-        }
+        response = requests.post(urljoin(self.base_url, "/api/pcap/stop"), auth=self.auth, verify=False)
+        response.raise_for_status()
+        return response.text
